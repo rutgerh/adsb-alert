@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ADSB Alert</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ asset_v|default(1) }}">
+</head>
+<body>
+  <header>
+<h1>ADS-B binnen <span id="radiusLabel">{{ radius_km|default(50) }}</span> km</h1>
+    <p>Centrum: {{ center_lat|default(52.155) }}, {{ center_lon|default(5.387) }} — ververs elke {{ refresh_seconds|default(10) }}s</p>
+    <button id="btnSettings">⚙️ Instellingen</button>
+  </header>
+  <main>
+    <div id="map"></div>
+    <div class="panel">
+      <table id="acTable">
+        <thead>
+          <tr>
+            <th>Callsign</th>
+            <th>ICAO24</th>
+            <th>Afstand (km)</th>
+            <th>Hoogte (m)</th>
+            <th>Snelheid (m/s)</th>
+            <th>Lat</th>
+            <th>Lon</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- Settings modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Instellingen</h2>
+        <button id="closeModal">✖</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Center latitude</label>
+          <input type="number" id="centerLat" step="0.000001" min="-90" max="90">
+        </div>
+
+        <div class="field">
+          <label>Center longitude</label>
+          <input type="number" id="centerLon" step="0.000001" min="-180" max="180">
+        </div>
+
+        <div class="field">
+          <label>Radius (km)</label>
+          <input type="number" id="radiusInput" min="1" max="300" step="1">
+        </div>
+
+        <div class="field">
+          <label>Watchlist (één callsign per regel)</label>
+          <textarea id="watchlistInput" rows="6" placeholder="bijv. KLM123&#10;HV1234"></textarea>
+        </div>
+
+        <details class="field">
+          <summary>Telegram</summary>
+          <label>Chat ID</label>
+          <input type="text" id="tgChatId" placeholder="Bijv. -1001234567890">
+          <label>Bot Token (wordt niet getoond)</label>
+          <input type="password" id="tgToken" placeholder="bot token...">
+          <small id="tgTokenMask"></small>
+          <label>Cooldown (minuten)</label>
+          <input type="number" id="tgCooldown" min="1" max="1440" step="1">
+          <button id="btnTestTelegram" type="button">Stuur testbericht</button>
+        </details>
+      </div>
+      <div class="modal-foot">
+        <button id="saveSettings">Opslaan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fallback-friendly globals (will be used by app.js) -->
+  <script>
+    (function(){
+      const _CENTER_LAT = {{ center_lat|default(52.155) }};
+      const _CENTER_LON = {{ center_lon|default(5.387) }};
+      const _RADIUS_KM = {{ radius_km|default(50) }};
+      const _REFRESH_SECONDS = {{ refresh_seconds|default(10) }};
+      const _SHOW_TEST = {{ 'true' if show_test_markers else 'false' }};
+
+      window.CENTER = (Array.isArray(window.CENTER) && window.CENTER.length === 2)
+        ? window.CENTER : [_CENTER_LAT, _CENTER_LON];
+      window.RADIUS_KM = (typeof window.RADIUS_KM === 'number' && !isNaN(window.RADIUS_KM))
+        ? window.RADIUS_KM : _RADIUS_KM;
+      window.REFRESH_SECONDS = (typeof window.REFRESH_SECONDS === 'number' && !isNaN(window.REFRESH_SECONDS))
+        ? window.REFRESH_SECONDS : _REFRESH_SECONDS;
+      window.SHOW_TEST_MARKERS = (typeof window.SHOW_TEST_MARKERS === 'boolean')
+        ? window.SHOW_TEST_MARKERS : _SHOW_TEST;
+    })();
+  </script>
+
+  <script src="{{ url_for('static', filename='app.js') }}?v={{ asset_v|default(1) }}"></script>
+
+<a href="https://github.com/rutgerh/adsb-alert" target="_blank" rel="noopener"
+   style="position: fixed; bottom: 16px; right: 16px; background: #111; color: #fff; padding: 8px 14px; border-radius: 9999px; text-decoration: none; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji'; font-size: 14px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); z-index: 9999;">
+  GitHub
+</a>
+
+</body>
+</html>
