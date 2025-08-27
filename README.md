@@ -1,3 +1,5 @@
+[![Buy Me A Coffee](https://img.buymeacoffee.com/button-api/?text=Buy+me+a+coffee&emoji=☕&slug=rutgerh&button_colour=FFDD00&font_colour=000000&outline_colour=000000&coffee_colour=ffffff)](https://www.buymeacoffee.com/rutgerh)
+
 # adsb-alert
 
 **adsb-alert** is a lightweight Flask + Leaflet web app to visualize aircraft around a location using the **ADSB.lol** API. It includes an optional headless worker for Telegram alerts based on a watchlist of callsigns. No database required—just a simple JSON config.
