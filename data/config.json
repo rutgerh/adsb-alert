@@ -1,0 +1,37 @@
+{
+  "center": {
+    "lat": 52.155,
+    "lon": 5.387
+  },
+  "radius_km": 40.0,
+  "refresh_seconds": 10,
+  "show_test_markers": false,
+  "opensky": {
+    "min_interval_sec": 0.5,
+    "daily_quota": 3900,
+    "max_backoff_sec": 60,
+    "retries": 3,
+    "timeout": 12
+  },
+  "watchlist": [
+    "LIFELN1",
+    "LIFELN2",
+    "LIFELN3",
+    "LIFELN4",
+    "ZXP01",
+    "ZXP02",
+    "ZXP03",
+    "ZXP04",
+    "ZXP05",
+    "ZXP06",
+    "ZXP25",
+    "ZXP26"
+  ],
+  "telegram": {
+    "token": "##TELEGRAMBOTTOKEN##",
+    "chat_id": "##CHATID##",
+    "cooldown_minutes": 5
+  },
+  "ui_reads_cache_only": true,
+  "cache_max_age_seconds": 45
+}

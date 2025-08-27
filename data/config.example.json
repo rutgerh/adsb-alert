@@ -1,0 +1,20 @@
+{
+  "center": {
+    "lat": 52.155,
+    "lon": 5.387
+  },
+  "radius_km": 40.0,
+  "refresh_seconds": 10,
+  "show_test_markers": false,
+  "ui_reads_cache_only": true,
+  "cache_max_age_seconds": 45,
+  "watchlist": [
+    "KLM123",
+    "HV1234"
+  ],
+  "telegram": {
+    "token": "##TELEGRAMBOTTOKEN##",
+    "chat_id": "##CHATID##",
+    "cooldown_minutes": 5
+  }
+}
