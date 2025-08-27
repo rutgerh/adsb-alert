@@ -1,0 +1,304 @@
+(function(){
+  // ===== Safe defaults if template vars are missing =====
+  const CENTER = (Array.isArray(window.CENTER) && window.CENTER.length === 2) ? window.CENTER : [52.155, 5.387];
+  let RADIUS_KM = (typeof window.RADIUS_KM === 'number' && !isNaN(window.RADIUS_KM)) ? window.RADIUS_KM : 50;
+  const REFRESH_SECONDS = (typeof window.REFRESH_SECONDS === 'number' && !isNaN(window.REFRESH_SECONDS)) ? window.REFRESH_SECONDS : 10;
+  const SHOW_TEST_MARKERS = (typeof window.SHOW_TEST_MARKERS === 'boolean') ? window.SHOW_TEST_MARKERS : false;
+
+  // ===== Map init (guarded) =====
+  let map = null;
+  let centerMarker = null;
+  let radiusCircle = null;
+
+  function tryInitMap() {
+    const mapDiv = document.getElementById('map');
+    if (!mapDiv || typeof L === 'undefined' || !L.map) {
+      console.warn('Map not initialized (missing #map or Leaflet).');
+      return;
+    }
+    map = L.map('map').setView(CENTER, 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+    centerMarker = L.circle(CENTER, { radius: 200 }).addTo(map);
+    radiusCircle = L.circle(CENTER, { radius: RADIUS_KM * 1000, color: '#333', weight: 1, fill: false }).addTo(map);
+  }
+  tryInitMap();
+
+  // ===== State =====
+  const markers = new Map();
+  const DEFAULT_STYLE = { radius: 6, weight: 1 };
+  const FOCUS_STYLE = { radius: 9, weight: 3 };
+  let focusedIcao = null;
+
+  // ===== Helpers =====
+  function applyDefaultStyle(m) { if (m && m.setStyle) m.setStyle(DEFAULT_STYLE); }
+  function applyFocusStyle(m) { if (m && m.setStyle) m.setStyle(FOCUS_STYLE); }
+  function format(n, d=2) { if (n === null || n === undefined) return ''; return Number(n).toFixed(d); }
+  function highlightRow(icao) {
+    document.querySelectorAll('#acTable tbody tr').forEach(tr => {
+      tr.classList.toggle('selected', tr.dataset.icao === icao);
+    });
+  }
+  function focusOn(icao) {
+    focusedIcao = icao;
+    markers.forEach((m, key) => {
+      if (key === focusedIcao) applyFocusStyle(m);
+      else if (!key.startsWith('test-')) applyDefaultStyle(m);
+    });
+    const m = markers.get(icao);
+    if (m && map) {
+      map.panTo(m.getLatLng());
+      m.openTooltip();
+      m.bringToFront();
+    }
+    highlightRow(icao);
+  }
+
+  // ===== Table + Map updates =====
+  function updateTable(states) {
+    const tbody = document.querySelector('#acTable tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    states.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.dataset.icao = s.icao24;
+      if (s.icao24 === focusedIcao) tr.classList.add('selected');
+      tr.innerHTML = `
+        <td>${s.callsign || ''}</td>
+        <td>${s.icao24}</td>
+        <td>${format(s.distance_km, 1)}</td>
+        <td>${format(s.geo_altitude ?? s.baro_altitude, 0)}</td>
+        <td>${format(s.velocity, 1)}</td>
+        <td>${format(s.lat, 4)}</td>
+        <td>${format(s.lon, 4)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    // Click row -> focus marker
+    tbody.onclick = (e) => {
+      const tr = e.target.closest('tr');
+      if (!tr) return;
+      const icao = tr.dataset.icao;
+      if (icao) focusOn(icao);
+    };
+  }
+
+  function updateMap(states) {
+    if (!map) return; // allow table-only operation if map missing
+    const seen = new Set(states.map(s => s.icao24));
+    // remove disappeared markers (not test markers)
+    for (const [k, v] of markers.entries()) {
+      if (!seen.has(k) && !k.startsWith('test-')) { map.removeLayer(v); markers.delete(k); }
+    }
+    // update/add markers
+    states.forEach(s => {
+      const pos = [s.lat, s.lon];
+      const label = `${s.callsign || s.icao24}\n${(s.distance_km||0).toFixed(1)} km`;
+      const existing = markers.get(s.icao24);
+      if (existing) {
+        existing.setLatLng(pos).bindTooltip(label);
+        if (s.icao24 === focusedIcao) applyFocusStyle(existing); else applyDefaultStyle(existing);
+      } else {
+        const m = L.circleMarker(pos, DEFAULT_STYLE).bindTooltip(label);
+        m.addTo(map);
+        // click marker -> focus row
+        m.on('click', () => focusOn(s.icao24));
+        markers.set(s.icao24, m);
+        if (s.icao24 === focusedIcao) applyFocusStyle(m);
+      }
+    });
+
+    if (SHOW_TEST_MARKERS) {
+      const tests = [
+        [CENTER[0] + 0.05, CENTER[1] + 0.05],
+        [CENTER[0] - 0.05, CENTER[1] - 0.05],
+      ];
+      tests.forEach((p, i) => {
+        const key = `test-${i}`;
+        if (!markers.has(key)) {
+          const m = L.circleMarker(p, { radius: 5, opacity: 0.5 });
+          m.bindTooltip(`TEST ${i+1}`);
+          m.addTo(map);
+          markers.set(key, m);
+        }
+      });
+    }
+  }
+
+  // ===== Polling =====
+  async function refresh() {
+    try {
+      const res = await fetch('/api/aircraft');
+      const data = await res.json();
+      updateTable(data.states || []);
+      updateMap(data.states || []);
+      console.log('GET /api/aircraft ->', res.status, 'states:', (data.states||[]).length);
+    } catch (e) {
+      console.error('refresh failed', e);
+    } finally {
+      setTimeout(refresh, REFRESH_SECONDS * 1000);
+    }
+  }
+  refresh();
+
+  // ===== Settings modal =====
+  const modal = document.getElementById('modal');
+  const btnSettings = document.getElementById('btnSettings');
+  const closeModalBtn = document.getElementById('closeModal');
+  const radiusLabel = document.getElementById('radiusLabel');
+  const radiusInput = document.getElementById('radiusInput');
+  const centerLatInput = document.getElementById('centerLat');
+  const centerLonInput = document.getElementById('centerLon');
+  const watchlistInput = document.getElementById('watchlistInput');
+  const tgChatId = document.getElementById('tgChatId');
+  const tgToken = document.getElementById('tgToken');
+  const tgTokenMask = document.getElementById('tgTokenMask');
+  const tgCooldown = document.getElementById('tgCooldown');
+  const btnSave = document.getElementById('saveSettings');
+  const btnTestTelegram = document.getElementById('btnTestTelegram');
+
+  async function loadSettings() {
+    try {
+      const res = await fetch('/api/get-settings');
+      const cfg = await res.json();
+      if (cfg && cfg.center) {
+        if (centerLatInput) centerLatInput.value = (cfg.center.lat ?? CENTER[0]);
+        if (centerLonInput) centerLonInput.value = (cfg.center.lon ?? CENTER[1]);
+      }
+      if (radiusInput && cfg && typeof cfg.radius_km === 'number') {
+        radiusInput.value = cfg.radius_km;
+      }
+      if (watchlistInput && Array.isArray(cfg.watchlist)) {
+        watchlistInput.value = cfg.watchlist.join('\n');
+      }
+      if (tgChatId && cfg.telegram) {
+        tgChatId.value = cfg.telegram.chat_id || '';
+      }
+      if (tgCooldown && cfg.telegram) {
+        tgCooldown.value = cfg.telegram.cooldown_minutes ?? 5;
+      }
+      // token stays masked; we don't read it back to the UI
+    } catch (e) {
+      console.warn('Failed to load settings', e);
+    }
+  }
+
+
+  function showModal() {
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    const mapEl = document.getElementById('map');
+    if (mapEl) mapEl.classList.add('modal-block');
+    if (map) setTimeout(() => map.invalidateSize(), 50);
+  }
+  function hideModal() {
+    if (!modal) return;
+    modal.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+    const mapEl = document.getElementById('map');
+    if (mapEl) mapEl.classList.remove('modal-block');
+    if (map) setTimeout(() => map.invalidateSize(), 50);
+  }
+
+  if (btnSettings) {
+    btnSettings.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/settings');
+        const s = await res.json();
+        if (radiusInput) radiusInput.value = s.radius_km;
+        if (radiusLabel) radiusLabel.textContent = s.radius_km;
+        RADIUS_KM = s.radius_km;
+        if (radiusCircle) radiusCircle.setRadius(RADIUS_KM * 1000);
+          // apply new center immediately
+          if (centerLatInput && centerLonInput) {
+            const lat = Number(centerLatInput.value || CENTER[0]);
+            const lon = Number(centerLonInput.value || CENTER[1]);
+            CENTER[0] = lat; CENTER[1] = lon;
+            if (map) { map.setView([lat, lon]); if (centerMarker) centerMarker.setLatLng([lat, lon]); if (radiusCircle) radiusCircle.setLatLng([lat, lon]); }
+          }
+
+        
+        if (centerLatInput) centerLatInput.value = (s.center && typeof s.center.lat === 'number') ? s.center.lat : CENTER[0];
+        if (centerLonInput) centerLonInput.value = (s.center && typeof s.center.lon === 'number') ? s.center.lon : CENTER[1];
+if (watchlistInput) watchlistInput.value = (s.watchlist || []).join('\n');
+        if (tgChatId) tgChatId.value = (s.telegram && s.telegram.chat_id) || '';
+        if (tgCooldown) tgCooldown.value = (s.telegram && s.telegram.cooldown_minutes) || 15;
+        if (tgToken) tgToken.value = '';
+        if (tgTokenMask) tgTokenMask.textContent = s.telegram && s.telegram.token_masked ? `(huidig: ${s.telegram.token_masked})` : '';
+        showModal();
+      } catch (e) {
+        alert('Kon instellingen niet laden.');
+      }
+    });
+  }
+  if (closeModalBtn) closeModalBtn.addEventListener('click', hideModal);
+
+  if (btnSave) {
+    btnSave.addEventListener('click', async () => {
+      const wl = (watchlistInput?.value || '').split('\n').map(x => x.trim()).filter(x => x);
+      const payload = {
+        radius_km: Number(radiusInput?.value || RADIUS_KM),
+        watchlist: wl,
+        telegram: {
+          chat_id: (tgChatId?.value || '').trim(),
+          cooldown_minutes: Number(tgCooldown?.value || 15)
+        }
+      };
+      payload.center = {
+        lat: Number(centerLatInput?.value || CENTER[0]),
+        lon: Number(centerLonInput?.value || CENTER[1])
+      };
+      if (tgToken && tgToken.value.trim()) {
+        payload.telegram.token = tgToken.value.trim();
+      }
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const out = await res.json();
+        if (out.ok) {
+          RADIUS_KM = Number(payload.radius_km);
+          if (radiusLabel) radiusLabel.textContent = RADIUS_KM;
+          if (radiusCircle) radiusCircle.setRadius(RADIUS_KM * 1000);
+          // apply new center immediately
+          if (centerLatInput && centerLonInput) {
+            const lat = Number(centerLatInput.value || CENTER[0]);
+            const lon = Number(centerLonInput.value || CENTER[1]);
+            CENTER[0] = lat; CENTER[1] = lon;
+            if (map) { map.setView([lat, lon]); if (centerMarker) centerMarker.setLatLng([lat, lon]); if (radiusCircle) radiusCircle.setLatLng([lat, lon]); }
+          }
+          hideModal();
+        } else {
+          alert('Opslaan mislukt.');
+        }
+      } catch {
+        alert('Opslaan mislukt.');
+      }
+    });
+  }
+
+  if (btnTestTelegram) {
+    btnTestTelegram.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/settings/test-telegram', { method: 'POST' });
+        const out = await res.json();
+        alert(out.ok ? 'Testbericht verzonden ✅' : 'Verzenden mislukt ❌');
+      } catch {
+        alert('Verzenden mislukt ❌');
+      }
+    });
+  }
+})();
+  function updateCenterAndCircle(lat, lon, radiusKm) {
+    if (!map) return;
+    const latLng = L.latLng(lat, lon);
+    if (centerMarker) centerMarker.setLatLng(latLng);
+    if (radiusCircle) radiusCircle.setLatLng(latLng).setRadius((radiusKm ?? RADIUS_KM) * 1000);
+    map.setView(latLng);
+    if (radiusLabel) radiusLabel.textContent = String(radiusKm ?? RADIUS_KM);
+  }
