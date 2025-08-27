@@ -10,6 +10,8 @@
 - **Docker-first**: easy to build and run
 - Configuration & cache via JSON files
 
+<img src="adsb-alert.png">
+
 ## Quickstart (Docker)
 ```bash
 docker build -t adsb-alert .
