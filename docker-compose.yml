@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  adsb-ui:
+    build: .
+    container_name: adsb-alert-ui
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data:rw
+    environment:
+      - TZ=Europe/Amsterdam
+    restart: unless-stopped
+
+  adsb-worker:
+    build: .
+    container_name: adsb-alert-worker
+    command: python -m app.worker
+    volumes:
+      - ./data:/app/data:rw
+    environment:
+      - TZ=Europe/Amsterdam
+    restart: unless-stopped
