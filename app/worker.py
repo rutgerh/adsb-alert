@@ -1,10 +1,7 @@
-
 import os
 import json
 import time
-import requests
 from .notify import send_telegram
-
 from .adsb_lol import fetch_states_adsblol_v2 as fetch_states
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -47,16 +44,6 @@ def get_cfg():
         c["radius_km"] = DEFAULT_CFG["radius_km"]
     return c
 
-def send_telegram(token: str, chat_id: str, text: str) -> bool:
-    if not token or not chat_id:
-        return False
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    try:
-        r = requests.post(url, json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True}, timeout=8)
-        return r.status_code == 200
-    except requests.RequestException:
-        return False
-
 def load_alert_state():
     st = load_json(ALERT_STATE_FILE, default={"last_sent": {}})
     return st if isinstance(st, dict) else {"last_sent": {}}
@@ -72,16 +59,18 @@ def cooldown_ok(key: str, minutes: int) -> bool:
     return (time.time() - last) > (minutes * 60)
 
 def main():
-    print("[worker] starting… provider=", os.getenv("ADSB_PROVIDER", "adsb_lol"))
+    print("[worker] starting, provider=", os.getenv("ADSB_PROVIDER", "adsb_lol"))
     while True:
         try:
             c = get_cfg()
-            lat = float(c["center"]["lat"]); lon = float(c["center"]["lon"])
+            lat = float(c["center"]["lat"])
+            lon = float(c["center"]["lon"])
             radius_km = float(c.get("radius_km", 50))
             interval = int(c.get("monitor_interval_seconds", 25))
-            if interval < 5: interval = 5
+            if interval < 5:
+                interval = 5
 
-            # fetch from provider (ADSB.lol when ADSB_PROVIDER=adsb_lol)
+            # fetch from provider
             data = fetch_states(center_lat=lat, center_lon=lon, radius_km=radius_km)
             data["_written_at"] = int(time.time())
 
@@ -91,21 +80,42 @@ def main():
 
             # Telegram alerts
             tg = (c.get("telegram") or {})
-            token = tg.get("token", ""); chat_id = tg.get("chat_id", ""); cooldown = int(tg.get("cooldown_minutes", 15))
-            watchlist = set([(w or "").strip().upper() for w in c.get("watchlist", []) if (w or "").strip()])
+            token = tg.get("token", "")
+            chat_id = tg.get("chat_id", "")
+            cooldown = int(tg.get("cooldown_minutes", 15))
+            watchlist = {(w or "").strip().upper() for w in c.get("watchlist", []) if (w or "").strip()}
+
             if token and chat_id and watchlist:
                 for s in data.get("states", []):
                     cs = (s.get("callsign") or "").strip().upper()
-                    if not cs or cs not in watchlist: continue
+                    if not cs or cs not in watchlist:
+                        continue
+
                     key = f"{cs}:{s.get('icao24')}"
                     if cooldown_ok(key, cooldown):
+                        icao = (s.get("icao24") or "").lower()
+                        s_lat = s.get("lat")
+                        s_lon = s.get("lon")
+
+                        adsbx_url = f"https://globe.adsbexchange.com/?icao={icao}" if icao else None
+
+                        if s_lat is not None and s_lon is not None:
+                            pos_line = f"Positie: {s_lat:.4f}, {s_lon:.4f}\n"
+                        else:
+                            pos_line = "Positie: ?\n"
+
+                        # bewust mojibake vliegtuigje laten staan
                         msg = (
-                            f"✈️ {cs} gezien binnen {radius_km:.0f} km\n"
+                            f"âœˆï¸ {cs} gezien binnen {radius_km:.0f} km\n"
                             f"Afstand: {s.get('distance_km', 0):.1f} km\n"
-                            f"Positie: {s.get('lat'):.4f}, {s.get('lon'):.4f}\n"
+                            f"{pos_line}"
                             f"Hoogte: {s.get('geo_altitude') or s.get('baro_altitude')}\n"
                             f"Snelheid: {s.get('velocity')} m/s"
                         )
+
+                        if adsbx_url:
+                            msg += f"\n{adsbx_url}"
+
                         if send_telegram(token, chat_id, msg):
                             mark_alert_sent(key)
 
@@ -116,3 +126,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+185.199.109.133
